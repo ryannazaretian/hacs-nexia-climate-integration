@@ -14,6 +14,14 @@ GLOBAL_LOGIN_ATTEMPTS = 4
 GLOBAL_LOGIN_ATTEMPTS_LEFT = GLOBAL_LOGIN_ATTEMPTS
 
 
+def is_number(string):
+    try:
+        float(string)
+        return True
+    except ValueError:
+        return False
+
+
 class NexiaThermostat:
     """ Nexia Climate Device Access Class """
     ROOT_URL = "https://www.mynexia.com"
@@ -695,7 +703,7 @@ class NexiaThermostat:
         """
         if self.has_outdoor_temperature(thermostat_id):
             outdoor_temp = self._get_thermostat_key('outdoor_temperature', thermostat_id)
-            if outdoor_temp.isnumeric():
+            if is_number(outdoor_temp):
                 return float(outdoor_temp)
             return float("Nan")
         raise Exception(
