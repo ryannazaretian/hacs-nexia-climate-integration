@@ -1,26 +1,3 @@
----
-layout: page
-title: "Nexia"
-description: "This component provides unofficial support for Nexia climate devices."
-date: 2019-06-13 07:06
-sidebar: true
-comments: false
-sharing: true
-footer: true
-logo: nexia.png
-ha_category:
-  - Sensor
-  - Binary Sensor
-  - Climate
-featured: true
-ha_release: 0.9
-ha_iot_class: Cloud Push
-redirect_from:
-  - /components/sensor.nexia/
-  - /components/binary_sensor.nexia/
-  - /components/climate.nexia/
----
-
 The `nexia` component lets you control thermostats connected to [Nexia (Trane/American Standard)](https://www.nexiahome.com/).
 
 By connecting this component, you will have access to all thermostats and zones in your associated home.
