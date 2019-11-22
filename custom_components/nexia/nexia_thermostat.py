@@ -606,6 +606,15 @@ class NexiaThermostat:
         """
         return self._get_thermostat_key("fan_type", thermostat_id) == "VSPD"
 
+
+    def has_zones(self, thermostat_id=None):
+        """
+        Indication of whether zoning is enabled or not on the thermostat.
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: bool
+        """
+        return self._get_thermostat_key("zoning_enabled", thermostat_id)
+
     ########################################################################
     # System Attributes
 

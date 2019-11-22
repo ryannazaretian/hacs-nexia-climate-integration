@@ -102,7 +102,10 @@ class NexiaZone(ClimateDevice):
     @property
     def name(self):
         """ Returns the zone name. """
-        return self._device.get_zone_name(self._thermostat_id, self._zone)
+        if self._device.has_zones(self._thermostat_id):
+            return self._device.get_zone_name(self._thermostat_id, self._zone)
+        else:
+            return self._device.get_thermostat_name(self._thermostat_id)
 
     @property
     def temperature_unit(self):
