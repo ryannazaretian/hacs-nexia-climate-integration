@@ -48,7 +48,8 @@ The Nexia Thermostat supports the following key concepts.
 
 The following attributes are provided by the Nexia Thermostat
 `aux_heat`, `away_mode`, `current_humidity`, `current_temperature`, 
-`fan_list`, `fan_mode`, `firmware`, `friendly_name`, `hold_mode`, `humidity`, 
+`fan_list`, `fan_mode`, `firmware`, `friendly_name`, `hold_mode`, `humidity`, `humidify_supported`, 
+`dehumidify_supported`, `humidify_setpoint`, `dehumidify_setpoint`
 `max_humidity`, `max_temp`, `min_humidity`, `min_temp`, `model`, `operation_list`, 
 `operation_mode`, `setpoint_status`, `target_temp_high`, `target_temp_low`, 
 `target_temp_step`, `temperature`, `thermostat_id`, `thermostat_name`, `zone_id`, 
@@ -127,6 +128,41 @@ The target dehumidify set point (%) of the system.
 | Attribute type | Description | 
 | -------------- | ----------- |
 | Integer | dehumidify setpoint as an integer |
+
+### Attribute `humidify_supported`
+
+Indicates if the system supports humidification. 
+
+| Attribute type | Description | 
+| -------------- | ----------- |
+| Boolean | humidification supported |
+
+### Attribute `dehumidify_supported`
+
+Indicates if the system supports dehumidification. 
+
+| Attribute type | Description | 
+| -------------- | ----------- |
+| Boolean | dehumidification supported |
+
+
+### Attribute `humidify_setpoint`
+
+The target humidify set point (%) of the system. 
+
+| Attribute type | Description | 
+| -------------- | ----------- |
+| Integer | humidify setpoint as an integer |
+
+
+### Attribute `dehumidify_setpoint`
+
+Same as `humidity` The target dehumidify set point (%) of the system. 
+
+| Attribute type | Description | 
+| -------------- | ----------- |
+| Integer | dehumidify setpoint as an integer |
+
 
 ### Attribute `max_humidity`
 
@@ -370,3 +406,12 @@ Part of the `nexia.` services. Sets the air cleaner mode. Options include 'AUTO'
 | ---------------------- | -------- | ----------- |
 | `entity_id` | yes | String or list of strings that point at `entity_id`'s of climate devices to control. Else targets all.
 | `aircleaner_mode` | no | 'AUTO', 'QUICK', or 'ALLERGY'
+
+### Service `set_humidify_setpoint`
+
+Part of the `nexia.` services. Sets the humidify setpoint. This is a system-wide setting. 
+
+| Service data attribute | Optional | Description |
+| ---------------------- | -------- | ----------- |
+| `entity_id` | yes | String or list of strings that point at `entity_id`'s of climate devices to control. Else targets all.
+| `humidity` | no | Humidify setpoint level, from 35 to 65. 
