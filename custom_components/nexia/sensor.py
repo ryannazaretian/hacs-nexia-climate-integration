@@ -21,7 +21,12 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     sensors = list()
 
+    ###########################################################################
+    # Thermostat / System Sensors
+    ###########################################################################
     for thermostat_id in thermostat.get_thermostat_ids():
+        #######################################################################
+        # System Status
         sensors.append(
             NexiaSensor(thermostat,
                         scan_interval,
@@ -31,7 +36,19 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                         None,
                         None)
         )
-
+        #######################################################################
+        # Air cleaner
+        sensors.append(
+            NexiaSensor(thermostat,
+                        scan_interval,
+                        thermostat_id,
+                        "get_air_cleaner_mode",
+                        "Air Cleaner Mode",
+                        None,
+                        None)
+        )
+        #######################################################################
+        # Compressor Speed
         if thermostat.has_variable_speed_compressor(thermostat_id):
             sensors.append(
                 NexiaSensor(thermostat,
@@ -52,7 +69,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                             None,
                             "%",
                             percent_conv))
-
+        #######################################################################
+        # Outdoor Temperature
         if thermostat.has_outdoor_temperature(thermostat_id):
             unit = (TEMP_CELSIUS if thermostat.get_unit(
                 thermostat_id) == thermostat.UNIT_CELSIUS else TEMP_FAHRENHEIT)
@@ -65,7 +83,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                             DEVICE_CLASS_TEMPERATURE,
                             unit)
             )
-
+        #######################################################################
+        # Relative Humidity
         if thermostat.has_relative_humidity(thermostat_id):
             sensors.append(
                 NexiaSensor(thermostat,
@@ -78,10 +97,15 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                             percent_conv)
             )
 
+        #######################################################################
+        # Zone Sensors
+        #######################################################################
         for zone in thermostat.get_zone_ids(thermostat_id):
             name = thermostat.get_zone_name(thermostat_id, zone)
             unit = (TEMP_CELSIUS if thermostat.get_unit(
                 thermostat_id) == thermostat.UNIT_CELSIUS else TEMP_FAHRENHEIT)
+            ###################################################################
+            # Temperature
             sensors.append(
                 NexiaZoneSensor(thermostat,
                                 scan_interval,
@@ -93,6 +117,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                                 unit,
                                 None)
             )
+            ###################################################################
+            # Zone Status
             sensors.append(
                 NexiaZoneSensor(thermostat,
                                 scan_interval,
@@ -103,6 +129,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                                 None,
                                 None)
             )
+            ###################################################################
+            # Setpoint Status
             sensors.append(
                 NexiaZoneSensor(thermostat,
                                 scan_interval,

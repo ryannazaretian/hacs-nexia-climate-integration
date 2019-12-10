@@ -615,6 +615,22 @@ class NexiaThermostat:
         """
         return self._get_thermostat_key("zoning_enabled", thermostat_id)
 
+    def has_dehumidify_support(self, thermostat_id=None):
+        """
+        Indiciation of whether dehumidifying support is available.
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: bool
+        """
+        return self._get_thermostat_key("dehumidify_allowed", thermostat_id)
+
+    def has_humidify_support(self, thermostat_id=None):
+        """
+        Indiciation of whether humidifying support is available.
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: bool
+        """
+        return self._get_thermostat_key("humidify_allowed", thermostat_id)
+
     ########################################################################
     # System Attributes
 
@@ -771,7 +787,23 @@ class NexiaThermostat:
         :param thermostat_id: int - the ID of the thermostat to use
         :return: float
         """
-        return self._get_thermostat_key('dehumidify_setpoint', thermostat_id)
+        if self.has_dehumidify_support(thermostat_id):
+            return self._get_thermostat_key('dehumidify_setpoint',
+                                            thermostat_id)
+        else:
+            raise AttributeError("This system does not support "
+                                 "dehumidification")
+
+    def get_humidify_setpoint(self, thermostat_id=None):
+        """
+        Returns the dehumidify setpoint from 0-1
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: float
+        """
+        if self.has_humidify_support(thermostat_id):
+            return self._get_thermostat_key('humidify_setpoint', thermostat_id)
+        else:
+            raise AttributeError("This system does not support humidification")
 
     def get_system_status(self, thermostat_id=None):
         """
@@ -884,29 +916,74 @@ class NexiaThermostat:
         :param thermostat_id: int - the ID of the thermostat to use
         :return: None
         """
-        if self.has_relative_humidity(thermostat_id):
+        if self.has_relative_humidity(thermostat_id) and \
+                self.has_dehumidify_support(thermostat_id):
             (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
                 thermostat_id)
+
+            if self.has_humidify_support(thermostat_id):
+                humidify_supported = True
+                humidify_setpoint = self.get_humidify_setpoint(thermostat_id)
+            else:
+                humidify_supported = False
+                humidify_setpoint = 0.50
 
             if min_humidity <= dehumidify_setpoint <= max_humidity:
                 url = self._get_thermostat_put_url("humidity_setpoints",
                                                    thermostat_id)
-                data = {"dehumidify_setpoint": dehumidify_setpoint,
+                data = {
                         "dehumidify_allowed": True,
-                        "id": self.get_thermostat_device_id(),
-                        "humidify_setpoint": 0.50,
-                        "humidify_allowed": False}
+                        "dehumidify_setpoint": dehumidify_setpoint,
+                        "humidify_allowed": humidify_supported,
+                        "humidify_setpoint": humidify_setpoint,
+                        "id": thermostat_id}
                 self._put_url(url, data)
             else:
                 raise ValueError(
-                    f"humidity_level out of range ({min_humidity} - "
+                    f"dehumidify_setpoint out of range ({min_humidity} - "
                     f"{max_humidity})")
         else:
             raise Exception(
                 "Setting target humidity is not supported on this thermostat.")
 
-    # TODO - Do any system's actually support humidifying? I.e. putting
-    #  moisture into a controlled space?
+    def set_humidify_setpoint(self, humidify_setpoint, thermostat_id):
+        """
+        Sets the overall system's humidify setpoint as a percent (0-1).
+
+        The system must support
+        :param humidify_setpoint: float
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: None
+        """
+        if self.has_relative_humidity(thermostat_id) and \
+            self.has_humidify_support(thermostat_id):
+            (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
+                thermostat_id)
+
+            if self.has_dehumidify_support(thermostat_id):
+                dehumidify_supported = True
+                dehumidify_setpoint = self.get_dehumidify_setpoint(thermostat_id)
+            else:
+                dehumidify_supported = False
+                dehumidify_setpoint = 0.50
+
+            if min_humidity <= humidify_setpoint <= max_humidity:
+                url = self._get_thermostat_put_url("humidity_setpoints",
+                                                   thermostat_id)
+                data = {"dehumidify_allowed": dehumidify_supported,
+                        "dehumidify_setpoint": dehumidify_setpoint,
+                        "humidify_allowed": True,
+                        "humidify_setpoint": humidify_setpoint,
+                        "id": thermostat_id,
+                        }
+                self._put_url(url, data)
+            else:
+                raise ValueError(
+                    f"humidify_setpoint out of range ({min_humidity} - "
+                    f"{max_humidity})")
+        else:
+            raise Exception(
+                "Setting target humidity is not supported on this thermostat.")
 
     ########################################################################
     # Zone Get Methods
