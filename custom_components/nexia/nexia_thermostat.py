@@ -907,6 +907,85 @@ class NexiaThermostat:
         else:
             raise Exception("This thermostat does not support emergency heat.")
 
+    def set_humidity_setpoints(self, **kwargs):
+        """
+
+        :param dehumidify_setpoint: float - The dehumidify_setpoint, 0-1, disable: None
+        :param humidify_setpoint: float - The humidify setpoint, 0-1, disable: None
+        :param thermostat_id:  int - the ID of the thermostat to use
+        :return:
+        """
+
+        dehumidify_setpoint = kwargs.get("dehumidify_setpoint", None)
+        humidify_setpoint = kwargs.get("humidify_setpoint", None)
+        thermostat_id = kwargs.get("thermostat_id", None)
+
+        if dehumidify_setpoint is None and humidify_setpoint is None:
+            # Do nothing
+            return
+
+        if thermostat_id is None:
+            raise TypeError("thermostat_id must be set.")
+
+
+        if self.has_relative_humidity(thermostat_id) and \
+                self.has_dehumidify_support(thermostat_id):
+            (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
+                thermostat_id)
+
+            if self.has_humidify_support(thermostat_id):
+                humidify_supported = True
+                if humidify_setpoint is None:
+                    humidify_setpoint = self.get_humidify_setpoint(thermostat_id)
+            else:
+                if humidify_setpoint is not None:
+                    raise SystemError("This thermostat does not support humidifying.")
+                humidify_supported = False
+                humidify_setpoint = self._get_thermostat_key('humidify_setpoint', thermostat_id)
+
+            if self.has_dehumidify_support(thermostat_id):
+                dehumidify_supported = True
+                if dehumidify_setpoint is None:
+                    dehumidify_setpoint = self.get_dehumidify_setpoint(thermostat_id)
+            else:
+                if dehumidify_setpoint is not None:
+                    raise SystemError("This thermostat does not support dehumidifying.")
+                dehumidify_supported = False
+                dehumidify_setpoint = self._get_thermostat_key('dehumidify_setpoint', thermostat_id)
+
+            current_humidity = self.get_relative_humidity(thermostat_id)
+
+            if min_humidity <= dehumidify_setpoint <= max_humidity:
+                url = self._get_thermostat_put_url( "humidity_setpoints",
+                                                    thermostat_id)
+                data = {
+                    "id":                           thermostat_id,
+                    "humidify_setpoint":            humidify_setpoint,
+                    "dehumidify_setpoint":          dehumidify_setpoint,
+                    "humidify_allowed":             humidify_supported,
+                    "dehumidify_allowed":           dehumidify_supported,
+                    "current_relative_humidity":    current_humidity,
+                    "display": {
+                    "humidity":                                 round(current_humidity * 100.0),
+                        "humidify_setpoint":                    round(humidify_setpoint * 100.0),
+                        "dehumidify_setpoint":                  round(dehumidify_setpoint * 100.0),
+                        "humidify_allowed":                     humidify_supported,
+                        "dehumidify_allowed":                   dehumidify_supported,
+                        "both_humidify_and_dehumidify_allowed": dehumidify_supported and humidify_supported,
+                        "show_humidity_setpoint_changer":       True,
+                        "heat":                                 False
+                    }
+                }
+
+                self._put_url(url, data)
+            else:
+                raise ValueError(
+                    f"dehumidify_setpoint out of range ({min_humidity} - "
+                    f"{max_humidity})")
+        else:
+            raise Exception(
+                "Setting target humidity is not supported on this thermostat.")
+
     def set_dehumidify_setpoint(self, dehumidify_setpoint, thermostat_id):
         """
         Sets the overall system's dehumidify setpoint as a percent (0-1).
@@ -916,35 +995,8 @@ class NexiaThermostat:
         :param thermostat_id: int - the ID of the thermostat to use
         :return: None
         """
-        if self.has_relative_humidity(thermostat_id) and \
-                self.has_dehumidify_support(thermostat_id):
-            (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
-                thermostat_id)
-
-            if self.has_humidify_support(thermostat_id):
-                humidify_supported = True
-                humidify_setpoint = self.get_humidify_setpoint(thermostat_id)
-            else:
-                humidify_supported = False
-                humidify_setpoint = 0.50
-
-            if min_humidity <= dehumidify_setpoint <= max_humidity:
-                url = self._get_thermostat_put_url("humidity_setpoints",
-                                                   thermostat_id)
-                data = {
-                        "dehumidify_allowed": True,
-                        "dehumidify_setpoint": dehumidify_setpoint,
-                        "humidify_allowed": humidify_supported,
-                        "humidify_setpoint": humidify_setpoint,
-                        "id": thermostat_id}
-                self._put_url(url, data)
-            else:
-                raise ValueError(
-                    f"dehumidify_setpoint out of range ({min_humidity} - "
-                    f"{max_humidity})")
-        else:
-            raise Exception(
-                "Setting target humidity is not supported on this thermostat.")
+        self.set_humidity_setpoints(dehumidify_setpoint=dehumidify_setpoint,
+                                    thermostat_id=thermostat_id)
 
     def set_humidify_setpoint(self, humidify_setpoint, thermostat_id):
         """
@@ -955,35 +1007,8 @@ class NexiaThermostat:
         :param thermostat_id: int - the ID of the thermostat to use
         :return: None
         """
-        if self.has_relative_humidity(thermostat_id) and \
-            self.has_humidify_support(thermostat_id):
-            (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
-                thermostat_id)
-
-            if self.has_dehumidify_support(thermostat_id):
-                dehumidify_supported = True
-                dehumidify_setpoint = self.get_dehumidify_setpoint(thermostat_id)
-            else:
-                dehumidify_supported = False
-                dehumidify_setpoint = 0.50
-
-            if min_humidity <= humidify_setpoint <= max_humidity:
-                url = self._get_thermostat_put_url("humidity_setpoints",
-                                                   thermostat_id)
-                data = {"dehumidify_allowed": dehumidify_supported,
-                        "dehumidify_setpoint": dehumidify_setpoint,
-                        "humidify_allowed": True,
-                        "humidify_setpoint": humidify_setpoint,
-                        "id": thermostat_id,
-                        }
-                self._put_url(url, data)
-            else:
-                raise ValueError(
-                    f"humidify_setpoint out of range ({min_humidity} - "
-                    f"{max_humidity})")
-        else:
-            raise Exception(
-                "Setting target humidity is not supported on this thermostat.")
+        self.set_humidity_setpoints(humidify_setpoint=humidify_setpoint,
+                                    thermostat_id=thermostat_id)
 
     ########################################################################
     # Zone Get Methods
