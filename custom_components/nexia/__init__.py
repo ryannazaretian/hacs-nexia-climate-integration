@@ -99,4 +99,4 @@ def setup(hass, config):
     return True
 
 def is_percent(value):
-    return cv.positive_int(value) and 0 <= value <= 100
+    return isinstance(value, int) and 0 <= value <= 100

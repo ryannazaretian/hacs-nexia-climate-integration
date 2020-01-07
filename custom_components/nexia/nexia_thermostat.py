@@ -82,9 +82,9 @@ class NexiaThermostat:
 
     ALL_IDS = "all"
 
-    def __init__(self, house_id: int, username=None, password=None,
+    def __init__(self, house_id=None, username=None, password=None,
                  auto_login=True,
-                 update_rate=None):
+                 update_rate=None, offline_json=None):
         """
         Connects to and provides the ability to get and set parameters of your
         Nexia connected thermostat.
@@ -108,6 +108,10 @@ class NexiaThermostat:
         self.last_update = None
         self.mutex = Lock()
 
+
+        self.offline_json = offline_json
+
+
         # Control the update rate
         if update_rate is None:
             self.update_rate = datetime.timedelta(
@@ -117,14 +121,15 @@ class NexiaThermostat:
         else:
             self.update_rate = datetime.timedelta(seconds=update_rate)
 
-        # Create a session
-        self.session = requests.session()
-        self.session.max_redirects = 3
+        if not self.offline_json:
+            # Create a session
+            self.session = requests.session()
+            self.session.max_redirects = 3
 
-        # Login if requested
-        if auto_login:
-            self.login()
-            self.update()
+            # Login if requested
+            if auto_login:
+                self.login()
+                self.update()
 
     def _get_authenticity_token(self, url: str):
         """
@@ -150,6 +155,13 @@ class NexiaThermostat:
         :param payload: dict
         :return: response
         """
+
+        if self.offline_json:
+            print(f"PUT:\n"
+                  f"  URL: {url}\n"
+                  f"  Data: {pprint.pformat(payload)}")
+            return None
+
         request_url = self.ROOT_URL + url
 
         if not self.last_csrf:
@@ -193,6 +205,13 @@ class NexiaThermostat:
         :param payload: dict
         :return: response
         """
+
+        if self.offline_json:
+            print(f"PUT:\n"
+                  f"  URL: {url}\n"
+                  f"  Data: {pprint.pformat(payload)}")
+            return None
+
         request_url = self.ROOT_URL + url
 
         # Let the code throw the exception
@@ -273,22 +292,27 @@ class NexiaThermostat:
         :param force_update: bool - Forces an update
         :return: dict(thermostat_jason)
         """
-        with self.mutex:
-            if self.thermostat_json is None or self._needs_update() or \
-                    force_update is True:
-                request = self._get_url(
-                    "/houses/" + str(self.house_id) + "/xxl_thermostats")
-                if request and request.status_code == 200:
-                    ts_json = json.loads(request.text)
-                    if ts_json:
-                        self.thermostat_json = ts_json
-                        self.last_update = datetime.datetime.now()
+        if self.offline_json and self.thermostat_json is None:
+            with open(self.offline_json) as fh:
+                self.thermostat_json = json.load(fh)
+                self.last_update = datetime.datetime.now()
+        else:
+            with self.mutex:
+                if self.thermostat_json is None or self._needs_update() or \
+                        force_update is True:
+                    request = self._get_url(
+                        "/houses/" + str(self.house_id) + "/xxl_thermostats")
+                    if request and request.status_code == 200:
+                        ts_json = json.loads(request.text)
+                        if ts_json:
+                            self.thermostat_json = ts_json
+                            self.last_update = datetime.datetime.now()
+                        else:
+                            raise Exception("Nothing in the JSON")
                     else:
-                        raise Exception("Nothing in the JSON")
-                else:
-                    self._check_response(
-                        "Failed to get thermostat JSON, session probably timed"
-                        " out", request)
+                        self._check_response(
+                            "Failed to get thermostat JSON, session probably timed"
+                            " out", request)
 
         if thermostat_id == self.ALL_IDS:
             return self.thermostat_json
@@ -928,10 +952,11 @@ class NexiaThermostat:
             raise TypeError("thermostat_id must be set.")
 
 
-        if self.has_relative_humidity(thermostat_id) and \
-                self.has_dehumidify_support(thermostat_id):
+        if self.has_relative_humidity(thermostat_id):
             (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
                 thermostat_id)
+            current_humidity = self.get_relative_humidity(thermostat_id)
+
 
             if self.has_humidify_support(thermostat_id):
                 humidify_supported = True
@@ -953,35 +978,47 @@ class NexiaThermostat:
                 dehumidify_supported = False
                 dehumidify_setpoint = self._get_thermostat_key('dehumidify_setpoint', thermostat_id)
 
-            current_humidity = self.get_relative_humidity(thermostat_id)
 
-            if min_humidity <= dehumidify_setpoint <= max_humidity:
-                url = self._get_thermostat_put_url( "humidity_setpoints",
-                                                    thermostat_id)
-                data = {
-                    "id":                           thermostat_id,
-                    "humidify_setpoint":            humidify_setpoint,
-                    "dehumidify_setpoint":          dehumidify_setpoint,
-                    "humidify_allowed":             humidify_supported,
-                    "dehumidify_allowed":           dehumidify_supported,
-                    "current_relative_humidity":    current_humidity,
-                    "display": {
-                    "humidity":                                 round(current_humidity * 100.0),
-                        "humidify_setpoint":                    round(humidify_setpoint * 100.0),
-                        "dehumidify_setpoint":                  round(dehumidify_setpoint * 100.0),
-                        "humidify_allowed":                     humidify_supported,
-                        "dehumidify_allowed":                   dehumidify_supported,
-                        "both_humidify_and_dehumidify_allowed": dehumidify_supported and humidify_supported,
-                        "show_humidity_setpoint_changer":       True,
-                        "heat":                                 False
+            # Clean up input
+            dehumidify_setpoint = round(0.05 * round(dehumidify_setpoint / 0.05), 2)
+            humidify_setpoint = round(0.05 * round(humidify_setpoint / 0.05), 2)
+
+            # Check inputs
+            if (dehumidify_supported and humidify_supported) and \
+                not (min_humidity <= humidify_setpoint <= dehumidify_setpoint <= max_humidity):
+                raise ValueError(f"Setpoints must be between ({min_humidity} -"
+                                 f" {max_humidity}) and humdiify_setpoint must"
+                                 f" be <= dehumidify_setpoint")
+            if (dehumidify_supported) and \
+                    not (min_humidity <= dehumidify_setpoint <= max_humidity):
+                raise ValueError(f"dehumidify_setpoint must be between "
+                                 f"({min_humidity} - {max_humidity})")
+            if (humidify_supported) and \
+                     not (min_humidity <= humidify_setpoint <= max_humidity):
+                raise ValueError(f"humidify_setpoint must be between "
+                                 f"({min_humidity} - {max_humidity})")
+
+            url = self._get_thermostat_put_url( "humidity_setpoints",
+                                                thermostat_id)
+            data = {
+                "id":                           thermostat_id,
+                "humidify_setpoint":            humidify_setpoint,
+                "dehumidify_setpoint":          dehumidify_setpoint,
+                "humidify_allowed":             humidify_supported,
+                "dehumidify_allowed":           dehumidify_supported,
+                "current_relative_humidity":    current_humidity,
+                "display": {
+                "humidity":                                 round(current_humidity * 100.0),
+                    "humidify_setpoint":                    round(humidify_setpoint * 100.0),
+                    "dehumidify_setpoint":                  round(dehumidify_setpoint * 100.0),
+                    "humidify_allowed":                     humidify_supported,
+                    "dehumidify_allowed":                   dehumidify_supported,
+                    "both_humidify_and_dehumidify_allowed": dehumidify_supported and humidify_supported,
+                    "show_humidity_setpoint_changer":       True,
+                    "heat":                                 False
                     }
                 }
-
-                self._put_url(url, data)
-            else:
-                raise ValueError(
-                    f"dehumidify_setpoint out of range ({min_humidity} - "
-                    f"{max_humidity})")
+            self._put_url(url, data)
         else:
             raise Exception(
                 "Setting target humidity is not supported on this thermostat.")
@@ -1512,3 +1549,46 @@ class NexiaThermostat:
         else:
             temperature = round(temperature)
         return temperature
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--username", type=str, help="Your Nexia username/email address.")
+    parser.add_argument("--password", type=str, help="Your Nexia password.")
+    parser.add_argument("--house_id", type=int, help="Your house id")
+    parser.add_argument("--offline_json", type=str, help="Offline JSON file to load. No NexiaHome communiction will be performed.")
+
+    args = parser.parse_args()
+    if args.offline_json:
+        nt = NexiaThermostat(offline_json=args.offline_json)
+    elif args.username and args.password and args.house_id:
+        nt = NexiaThermostat(username=args.username,
+                             password=args.password,
+                             house_id=args.house_id)
+    else:
+        parser.print_help()
+        exit()
+
+    print("NexiaThermostat instance can be referenced using nt.<command>.")
+    print("List of available thermostats and zones:")
+    for _thermostat_id in nt.get_thermostat_ids():
+        _thermostat_name = nt.get_thermostat_name(_thermostat_id)
+        _thermostat_model = nt.get_thermostat_model(_thermostat_id)
+        print(f"{_thermostat_id} - \"{_thermostat_name}\" ({_thermostat_model})")
+        print(f"  Zones:")
+        for _zone_id in nt.get_zone_ids(_thermostat_id):
+            _zone_name = nt.get_zone_name(_thermostat_id, _zone_id)
+            print(f"    {_zone_id} - \"{_zone_name}\"")
+    del _thermostat_id, _thermostat_model, _thermostat_name, _zone_name, _zone_id, args, parser
+
+    import code
+    import readline
+    import rlcompleter
+
+    variables = globals()
+    variables.update(locals())
+
+    readline.set_completer(rlcompleter.Completer(variables).complete)
+    readline.parse_and_bind("tab: complete")
+    code.InteractiveConsole(variables).interact()

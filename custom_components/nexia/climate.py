@@ -71,7 +71,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
                     zone.set_humidify_setpoint(humidity)
 
             hass.services.register(
-                DOMAIN, SERVICE_SET_HUMIDIFY_SETPOINT, humidify_set_service(),
+                DOMAIN, SERVICE_SET_HUMIDIFY_SETPOINT, humidify_set_service,
                 schema=SET_HUMIDITY_SCHEMA)
 
 
@@ -443,7 +443,7 @@ class NexiaZone(ClimateDevice):
 
     def set_humidify_setpoint(self, humidify_setpoint):
         """ Sets the humidify setpoint """
-        self._device.set_humdify_setpoint(humidify_setpoint / 100.0, self._thermostat_id)
+        self._device.set_humidify_setpoint(humidify_setpoint / 100.0, self._thermostat_id)
 
     def _update(self):
         """Update the state."""
