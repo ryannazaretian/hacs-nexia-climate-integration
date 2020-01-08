@@ -44,7 +44,8 @@ SET_FAN_MIN_ON_TIME_SCHEMA = vol.Schema({
 
 SET_HUMIDITY_SCHEMA = vol.Schema({
     vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
-    vol.Required(ATTR_HUMIDITY): is_percent,
+    vol.Required(ATTR_HUMIDITY): vol.All(vol.Coerce(int),
+                                         vol.Range(min=35, max=65))
 })
 
 

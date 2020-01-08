@@ -11,7 +11,7 @@ set_aircleaner_mode:
 
 set_humidify_setpoint:
   description: "While the climate.set_humidity service sets the dehumidification setpoint, there was
-   not a way to incorporate humidification support into the stock Home Assistant cliamte component.
+   not a way to incorporate humidification support into the stock Home Assistant climate component.
    This nexia.set_humidify_setpoint will allow you to set the humidification setpoint."
   fields:
     entity_id:
@@ -20,4 +20,4 @@ set_humidify_setpoint:
       example: "\"entity_id\": \"home\""
     humidity:
       description: "The humidification setpoint as a float, range 0-100."
-      example: "\"humidity\": \"0.45\""
+      example: "\"humidity\": \"45\""
