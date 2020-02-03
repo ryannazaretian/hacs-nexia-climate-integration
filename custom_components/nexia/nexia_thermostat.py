@@ -273,22 +273,26 @@ class NexiaThermostat:
         :param force_update: bool - Forces an update
         :return: dict(thermostat_jason)
         """
-        with self.mutex:
-            if self.thermostat_json is None or self._needs_update() or \
-                    force_update is True:
-                request = self._get_url(
-                    "/houses/" + str(self.house_id) + "/xxl_thermostats")
-                if request and request.status_code == 200:
-                    ts_json = json.loads(request.text)
-                    if ts_json:
-                        self.thermostat_json = ts_json
-                        self.last_update = datetime.datetime.now()
+        if self.thermostat_json is None or self._needs_update() or \
+            force_update is True:
+            with self.mutex:
+                # Now that we have the mutex we check again
+                # to make an update did not happen elsewhere
+                if self.thermostat_json is None or self._needs_update() or \
+                        force_update is True:
+                    request = self._get_url(
+                        "/houses/" + str(self.house_id) + "/xxl_thermostats")
+                    if request and request.status_code == 200:
+                        ts_json = json.loads(request.text)
+                        if ts_json:
+                            self.thermostat_json = ts_json
+                            self.last_update = datetime.datetime.now()
+                        else:
+                            raise Exception("Nothing in the JSON")
                     else:
-                        raise Exception("Nothing in the JSON")
-                else:
-                    self._check_response(
-                        "Failed to get thermostat JSON, session probably timed"
-                        " out", request)
+                        self._check_response(
+                            "Failed to get thermostat JSON, session probably timed"
+                            " out", request)
 
         if thermostat_id == self.ALL_IDS:
             return self.thermostat_json
