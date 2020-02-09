@@ -1452,13 +1452,13 @@ class NexiaThermostat:
                     self.round_temp(cool_temperature,
                                     thermostat_id) - deadband)
             elif zone_mode == self.OPERATION_MODE_HEAT:
+                heat_temperature = self.round_temp(set_temperature,
+                                                   thermostat_id)
                 cool_temperature = max(
                     self.get_zone_cooling_setpoint(thermostat_id=thermostat_id,
                                                    zone_id=zone_id),
                     self.round_temp(heat_temperature,
                                     thermostat_id) + deadband)
-                heat_temperature = self.round_temp(set_temperature,
-                                                   thermostat_id)
             else:
                 cool_temperature = self.round_temp(set_temperature,
                                                    thermostat_id) + \
