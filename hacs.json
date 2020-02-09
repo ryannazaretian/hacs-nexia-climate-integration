@@ -1,3 +1,6 @@
 {
-  "name": "Nexia Climate Integration"
+  "name": "Nexia Climate Integration",
+  "render_readme": true,
+  "domains": ["sensor", "binary_sensor", "climate"],
+  "iot_class": "Local Polling"
 }
