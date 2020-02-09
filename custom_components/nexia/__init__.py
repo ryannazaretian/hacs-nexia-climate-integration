@@ -50,6 +50,10 @@ ATTR_OUTDOOR_TEMPERATURE = 'outdoor_temperature'
 ATTR_THERMOSTAT_ID = 'thermostat_id'
 ATTR_ZONE_ID = 'zone_id'
 ATTR_AIRCLEANER_MODE = 'aircleaner_mode'
+ATTR_HUMIDIFY_SUPPORTED = "humidify_supported"
+ATTR_DEHUMIDIFY_SUPPORTED = "dehumidify_supported"
+ATTR_HUMIDIFY_SETPOINT = "humidify_setpoint"
+ATTR_DEHUMIDIFY_SETPOINT = "dehumidify_setpoint"
 
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
@@ -93,3 +97,6 @@ def setup(hass, config):
             notification_id=NOTIFICATION_ID)
         return False
     return True
+
+def is_percent(value):
+    return isinstance(value, int) and 0 <= value <= 100

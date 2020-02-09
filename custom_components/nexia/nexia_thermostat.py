@@ -82,9 +82,9 @@ class NexiaThermostat:
 
     ALL_IDS = "all"
 
-    def __init__(self, house_id: int, username=None, password=None,
+    def __init__(self, house_id=None, username=None, password=None,
                  auto_login=True,
-                 update_rate=None):
+                 update_rate=None, offline_json=None):
         """
         Connects to and provides the ability to get and set parameters of your
         Nexia connected thermostat.
@@ -108,6 +108,10 @@ class NexiaThermostat:
         self.last_update = None
         self.mutex = Lock()
 
+
+        self.offline_json = offline_json
+
+
         # Control the update rate
         if update_rate is None:
             self.update_rate = datetime.timedelta(
@@ -117,14 +121,15 @@ class NexiaThermostat:
         else:
             self.update_rate = datetime.timedelta(seconds=update_rate)
 
-        # Create a session
-        self.session = requests.session()
-        self.session.max_redirects = 3
+        if not self.offline_json:
+            # Create a session
+            self.session = requests.session()
+            self.session.max_redirects = 3
 
-        # Login if requested
-        if auto_login:
-            self.login()
-            self.update()
+            # Login if requested
+            if auto_login:
+                self.login()
+                self.update()
 
     def _get_authenticity_token(self, url: str):
         """
@@ -150,6 +155,13 @@ class NexiaThermostat:
         :param payload: dict
         :return: response
         """
+
+        if self.offline_json:
+            print(f"PUT:\n"
+                  f"  URL: {url}\n"
+                  f"  Data: {pprint.pformat(payload)}")
+            return None
+
         request_url = self.ROOT_URL + url
 
         if not self.last_csrf:
@@ -193,6 +205,13 @@ class NexiaThermostat:
         :param payload: dict
         :return: response
         """
+
+        if self.offline_json:
+            print(f"PUT:\n"
+                  f"  URL: {url}\n"
+                  f"  Data: {pprint.pformat(payload)}")
+            return None
+
         request_url = self.ROOT_URL + url
 
         # Let the code throw the exception
@@ -619,6 +638,22 @@ class NexiaThermostat:
         """
         return self._get_thermostat_key("zoning_enabled", thermostat_id)
 
+    def has_dehumidify_support(self, thermostat_id=None):
+        """
+        Indiciation of whether dehumidifying support is available.
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: bool
+        """
+        return self._get_thermostat_key("dehumidify_allowed", thermostat_id)
+
+    def has_humidify_support(self, thermostat_id=None):
+        """
+        Indiciation of whether humidifying support is available.
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: bool
+        """
+        return self._get_thermostat_key("humidify_allowed", thermostat_id)
+
     ########################################################################
     # System Attributes
 
@@ -775,7 +810,23 @@ class NexiaThermostat:
         :param thermostat_id: int - the ID of the thermostat to use
         :return: float
         """
-        return self._get_thermostat_key('dehumidify_setpoint', thermostat_id)
+        if self.has_dehumidify_support(thermostat_id):
+            return self._get_thermostat_key('dehumidify_setpoint',
+                                            thermostat_id)
+        else:
+            raise AttributeError("This system does not support "
+                                 "dehumidification")
+
+    def get_humidify_setpoint(self, thermostat_id=None):
+        """
+        Returns the dehumidify setpoint from 0-1
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: float
+        """
+        if self.has_humidify_support(thermostat_id):
+            return self._get_thermostat_key('humidify_setpoint', thermostat_id)
+        else:
+            raise AttributeError("This system does not support humidification")
 
     def get_system_status(self, thermostat_id=None):
         """
@@ -879,6 +930,98 @@ class NexiaThermostat:
         else:
             raise Exception("This thermostat does not support emergency heat.")
 
+    def set_humidity_setpoints(self, **kwargs):
+        """
+
+        :param dehumidify_setpoint: float - The dehumidify_setpoint, 0-1, disable: None
+        :param humidify_setpoint: float - The humidify setpoint, 0-1, disable: None
+        :param thermostat_id:  int - the ID of the thermostat to use
+        :return:
+        """
+
+        dehumidify_setpoint = kwargs.get("dehumidify_setpoint", None)
+        humidify_setpoint = kwargs.get("humidify_setpoint", None)
+        thermostat_id = kwargs.get("thermostat_id", None)
+
+        if dehumidify_setpoint is None and humidify_setpoint is None:
+            # Do nothing
+            return
+
+        if thermostat_id is None:
+            raise TypeError("thermostat_id must be set.")
+
+
+        if self.has_relative_humidity(thermostat_id):
+            (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
+                thermostat_id)
+            current_humidity = self.get_relative_humidity(thermostat_id)
+
+
+            if self.has_humidify_support(thermostat_id):
+                humidify_supported = True
+                if humidify_setpoint is None:
+                    humidify_setpoint = self.get_humidify_setpoint(thermostat_id)
+            else:
+                if humidify_setpoint is not None:
+                    raise SystemError("This thermostat does not support humidifying.")
+                humidify_supported = False
+                humidify_setpoint = self._get_thermostat_key('humidify_setpoint', thermostat_id)
+
+            if self.has_dehumidify_support(thermostat_id):
+                dehumidify_supported = True
+                if dehumidify_setpoint is None:
+                    dehumidify_setpoint = self.get_dehumidify_setpoint(thermostat_id)
+            else:
+                if dehumidify_setpoint is not None:
+                    raise SystemError("This thermostat does not support dehumidifying.")
+                dehumidify_supported = False
+                dehumidify_setpoint = self._get_thermostat_key('dehumidify_setpoint', thermostat_id)
+
+
+            # Clean up input
+            dehumidify_setpoint = round(0.05 * round(dehumidify_setpoint / 0.05), 2)
+            humidify_setpoint = round(0.05 * round(humidify_setpoint / 0.05), 2)
+
+            # Check inputs
+            if (dehumidify_supported and humidify_supported) and \
+                not (min_humidity <= humidify_setpoint <= dehumidify_setpoint <= max_humidity):
+                raise ValueError(f"Setpoints must be between ({min_humidity} -"
+                                 f" {max_humidity}) and humdiify_setpoint must"
+                                 f" be <= dehumidify_setpoint")
+            if (dehumidify_supported) and \
+                    not (min_humidity <= dehumidify_setpoint <= max_humidity):
+                raise ValueError(f"dehumidify_setpoint must be between "
+                                 f"({min_humidity} - {max_humidity})")
+            if (humidify_supported) and \
+                     not (min_humidity <= humidify_setpoint <= max_humidity):
+                raise ValueError(f"humidify_setpoint must be between "
+                                 f"({min_humidity} - {max_humidity})")
+
+            url = self._get_thermostat_put_url( "humidity_setpoints",
+                                                thermostat_id)
+            data = {
+                "id":                           thermostat_id,
+                "humidify_setpoint":            humidify_setpoint,
+                "dehumidify_setpoint":          dehumidify_setpoint,
+                "humidify_allowed":             humidify_supported,
+                "dehumidify_allowed":           dehumidify_supported,
+                "current_relative_humidity":    current_humidity,
+                "display": {
+                "humidity":                                 round(current_humidity * 100.0),
+                    "humidify_setpoint":                    round(humidify_setpoint * 100.0),
+                    "dehumidify_setpoint":                  round(dehumidify_setpoint * 100.0),
+                    "humidify_allowed":                     humidify_supported,
+                    "dehumidify_allowed":                   dehumidify_supported,
+                    "both_humidify_and_dehumidify_allowed": dehumidify_supported and humidify_supported,
+                    "show_humidity_setpoint_changer":       True,
+                    "heat":                                 False
+                    }
+                }
+            self._put_url(url, data)
+        else:
+            raise Exception(
+                "Setting target humidity is not supported on this thermostat.")
+
     def set_dehumidify_setpoint(self, dehumidify_setpoint, thermostat_id):
         """
         Sets the overall system's dehumidify setpoint as a percent (0-1).
@@ -888,29 +1031,20 @@ class NexiaThermostat:
         :param thermostat_id: int - the ID of the thermostat to use
         :return: None
         """
-        if self.has_relative_humidity(thermostat_id):
-            (min_humidity, max_humidity) = self.get_humidity_setpoint_limits(
-                thermostat_id)
+        self.set_humidity_setpoints(dehumidify_setpoint=dehumidify_setpoint,
+                                    thermostat_id=thermostat_id)
 
-            if min_humidity <= dehumidify_setpoint <= max_humidity:
-                url = self._get_thermostat_put_url("humidity_setpoints",
-                                                   thermostat_id)
-                data = {"dehumidify_setpoint": dehumidify_setpoint,
-                        "dehumidify_allowed": True,
-                        "id": self.get_thermostat_device_id(),
-                        "humidify_setpoint": 0.50,
-                        "humidify_allowed": False}
-                self._put_url(url, data)
-            else:
-                raise ValueError(
-                    f"humidity_level out of range ({min_humidity} - "
-                    f"{max_humidity})")
-        else:
-            raise Exception(
-                "Setting target humidity is not supported on this thermostat.")
+    def set_humidify_setpoint(self, humidify_setpoint, thermostat_id):
+        """
+        Sets the overall system's humidify setpoint as a percent (0-1).
 
-    # TODO - Do any system's actually support humidifying? I.e. putting
-    #  moisture into a controlled space?
+        The system must support
+        :param humidify_setpoint: float
+        :param thermostat_id: int - the ID of the thermostat to use
+        :return: None
+        """
+        self.set_humidity_setpoints(humidify_setpoint=humidify_setpoint,
+                                    thermostat_id=thermostat_id)
 
     ########################################################################
     # Zone Get Methods
@@ -1318,13 +1452,13 @@ class NexiaThermostat:
                     self.round_temp(cool_temperature,
                                     thermostat_id) - deadband)
             elif zone_mode == self.OPERATION_MODE_HEAT:
+                heat_temperature = self.round_temp(set_temperature,
+                                                   thermostat_id)
                 cool_temperature = max(
                     self.get_zone_cooling_setpoint(thermostat_id=thermostat_id,
                                                    zone_id=zone_id),
                     self.round_temp(heat_temperature,
                                     thermostat_id) + deadband)
-                heat_temperature = self.round_temp(set_temperature,
-                                                   thermostat_id)
             else:
                 cool_temperature = self.round_temp(set_temperature,
                                                    thermostat_id) + \
@@ -1414,3 +1548,46 @@ class NexiaThermostat:
         else:
             temperature = round(temperature)
         return temperature
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--username", type=str, help="Your Nexia username/email address.")
+    parser.add_argument("--password", type=str, help="Your Nexia password.")
+    parser.add_argument("--house_id", type=int, help="Your house id")
+    parser.add_argument("--offline_json", type=str, help="Offline JSON file to load. No NexiaHome communiction will be performed.")
+
+    args = parser.parse_args()
+    if args.offline_json:
+        nt = NexiaThermostat(offline_json=args.offline_json)
+    elif args.username and args.password and args.house_id:
+        nt = NexiaThermostat(username=args.username,
+                             password=args.password,
+                             house_id=args.house_id)
+    else:
+        parser.print_help()
+        exit()
+
+    print("NexiaThermostat instance can be referenced using nt.<command>.")
+    print("List of available thermostats and zones:")
+    for _thermostat_id in nt.get_thermostat_ids():
+        _thermostat_name = nt.get_thermostat_name(_thermostat_id)
+        _thermostat_model = nt.get_thermostat_model(_thermostat_id)
+        print(f"{_thermostat_id} - \"{_thermostat_name}\" ({_thermostat_model})")
+        print(f"  Zones:")
+        for _zone_id in nt.get_zone_ids(_thermostat_id):
+            _zone_name = nt.get_zone_name(_thermostat_id, _zone_id)
+            print(f"    {_zone_id} - \"{_zone_name}\"")
+    del _thermostat_id, _thermostat_model, _thermostat_name, _zone_name, _zone_id, args, parser
+
+    import code
+    import readline
+    import rlcompleter
+
+    variables = globals()
+    variables.update(locals())
+
+    readline.set_completer(rlcompleter.Completer(variables).complete)
+    readline.parse_and_bind("tab: complete")
+    code.InteractiveConsole(variables).interact()

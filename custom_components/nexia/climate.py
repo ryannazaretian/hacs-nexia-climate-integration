@@ -25,18 +25,27 @@ from homeassistant.const import (TEMP_CELSIUS, TEMP_FAHRENHEIT,
 from homeassistant.util import Throttle
 from . import (ATTR_MODEL, ATTR_FIRMWARE, ATTR_THERMOSTAT_NAME,
                ATTR_SETPOINT_STATUS,
-               ATTR_ZONE_STATUS, ATTR_AIRCLEANER_MODE, DOMAIN,
+               ATTR_ZONE_STATUS, ATTR_AIRCLEANER_MODE, ATTR_HUMIDIFY_SUPPORTED,
+               ATTR_DEHUMIDIFY_SUPPORTED, ATTR_HUMIDIFY_SETPOINT,
+               ATTR_DEHUMIDIFY_SETPOINT, DOMAIN,
                ATTR_THERMOSTAT_ID, ATTR_ZONE_ID, ATTRIBUTION, DATA_NEXIA,
                NEXIA_DEVICE,
-               NEXIA_SCAN_INTERVAL)
+               NEXIA_SCAN_INTERVAL, is_percent)
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_SET_AIRCLEANER_MODE = 'set_aircleaner_mode'
+SERVICE_SET_HUMIDIFY_SETPOINT = 'set_humidify_setpoint'
 
 SET_FAN_MIN_ON_TIME_SCHEMA = vol.Schema({
     vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
     vol.Required(ATTR_AIRCLEANER_MODE): cv.string,
+})
+
+SET_HUMIDITY_SCHEMA = vol.Schema({
+    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+    vol.Required(ATTR_HUMIDITY): vol.All(vol.Coerce(int),
+                                         vol.Range(min=35, max=65))
 })
 
 
@@ -46,12 +55,33 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     scan_interval = hass.data[DATA_NEXIA][NEXIA_SCAN_INTERVAL]
     zones = []
     for thermostat_id in thermostat.get_thermostat_ids():
+
+        if thermostat.has_humidify_support(thermostat_id):
+            # Add humidify service support
+            def humidify_set_service(service):
+                entity_id = service.data.get(ATTR_ENTITY_ID)
+                humidity = service.data.get(ATTR_HUMIDITY)
+
+                if entity_id:
+                    target_zones = [zone for zone in zones if
+                                    zone.entity_id in entity_id]
+                else:
+                    target_zones = zones
+
+                for zone in target_zones:
+                    zone.set_humidify_setpoint(humidity)
+
+            hass.services.register(
+                DOMAIN, SERVICE_SET_HUMIDIFY_SETPOINT, humidify_set_service,
+                schema=SET_HUMIDITY_SCHEMA)
+
+
         for zone_id in thermostat.get_zone_ids(thermostat_id):
             zones.append(
                 NexiaZone(thermostat, scan_interval, thermostat_id, zone_id))
     add_entities(zones, True)
 
-    def airclaner_set_service(service):
+    def aircleaner_set_service(service):
         entity_id = service.data.get(ATTR_ENTITY_ID)
         aircleaner_mode = service.data.get(ATTR_AIRCLEANER_MODE)
 
@@ -65,8 +95,10 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
             zone.set_aircleaner_mode(aircleaner_mode)
 
     hass.services.register(
-        DOMAIN, SERVICE_SET_AIRCLEANER_MODE, airclaner_set_service,
+        DOMAIN, SERVICE_SET_AIRCLEANER_MODE, aircleaner_set_service,
         schema=SET_FAN_MIN_ON_TIME_SCHEMA)
+
+
 
 
 class NexiaZone(ClimateDevice):
@@ -153,6 +185,7 @@ class NexiaZone(ClimateDevice):
         return self._device.get_zone_presets(self._thermostat_id, self._zone)
 
     def set_humidity(self, humidity):
+        """ Sets the dehumidify target """
         self._device.set_dehumidify_setpoint(humidity / 100.0,
                                              self._thermostat_id)
 
@@ -294,6 +327,7 @@ class NexiaZone(ClimateDevice):
             ATTR_HVAC_MODES: self.hvac_modes,
             ATTR_PRESET_MODE: self._device.get_zone_preset(self._thermostat_id,
                                                            self._zone),
+
             # ATTR_PRESET_MODE: self._device.get_zone_setpoint_status(
             #     self._thermostat_id, self._zone),
             # TODO - Enable HOLD_MODES once the presets can be parsed reliably
@@ -320,9 +354,10 @@ class NexiaZone(ClimateDevice):
 
         if self._device.has_relative_humidity(self._thermostat_id):
             data.update({
-                ATTR_HUMIDITY: round(
-                    self._device.get_dehumidify_setpoint(
-                        self._thermostat_id) * 100.0, 1),
+                ATTR_HUMIDIFY_SUPPORTED: self._device.has_humidify_support(
+                    self._thermostat_id),
+                ATTR_DEHUMIDIFY_SUPPORTED: self._device.has_dehumidify_support(
+                    self._thermostat_id),
                 ATTR_CURRENT_HUMIDITY: round(
                     self._device.get_relative_humidity(
                         self._thermostat_id) * 100.0, 1),
@@ -333,6 +368,19 @@ class NexiaZone(ClimateDevice):
                     self._device.get_humidity_setpoint_limits(
                         self._thermostat_id)[1] * 100.0, 1),
             })
+            if self._device.has_dehumidify_support(self._thermostat_id):
+                data.update({
+                    ATTR_DEHUMIDIFY_SETPOINT: round(
+                        self._device.get_dehumidify_setpoint(
+                            self._thermostat_id) * 100.0, 1),
+                    ATTR_HUMIDITY: round(
+                        self._device.get_dehumidify_setpoint(
+                            self._thermostat_id) * 100.0, 1)})
+            if self._device.has_humidify_support(self._thermostat_id):
+                data.update({
+                    ATTR_HUMIDIFY_SETPOINT: round(
+                        self._device.get_humidify_setpoint(
+                            self._thermostat_id) * 100.0, 1)})
         return data
 
     def set_preset_mode(self, preset_mode: str):
@@ -358,7 +406,7 @@ class NexiaZone(ClimateDevice):
         self.set_hvac_mode(self._device.OPERATION_MODE_AUTO)
 
     def set_swing_mode(self, swing_mode):
-        """Unsupport - Swing Mode"""
+        """Unsupported - Swing Mode"""
         raise NotImplementedError(
             "set_swing_mode is not supported by this device")
 
@@ -393,6 +441,10 @@ class NexiaZone(ClimateDevice):
     def set_aircleaner_mode(self, aircleaner_mode):
         """ Sets the aircleaner mode """
         self._device.set_air_cleaner(aircleaner_mode, self._thermostat_id)
+
+    def set_humidify_setpoint(self, humidify_setpoint):
+        """ Sets the humidify setpoint """
+        self._device.set_humidify_setpoint(humidify_setpoint / 100.0, self._thermostat_id)
 
     def _update(self):
         """Update the state."""
