@@ -292,12 +292,11 @@ class NexiaThermostat:
         :param force_update: bool - Forces an update
         :return: dict(thermostat_jason)
         """
-        if self.offline_json and self.thermostat_json is None:
-            with open(self.offline_json) as fh:
-                self.thermostat_json = json.load(fh)
-                self.last_update = datetime.datetime.now()
-        else:
+        if self.thermostat_json is None or self._needs_update() or \
+            force_update is True:
             with self.mutex:
+                # Now that we have the mutex we check again
+                # to make an update did not happen elsewhere
                 if self.thermostat_json is None or self._needs_update() or \
                         force_update is True:
                     request = self._get_url(
