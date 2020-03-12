@@ -9,18 +9,6 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, CONF_ID, \
     CONF_SCAN_INTERVAL
 
-REQUIREMENTS = [
-    "beautifulsoup4==4.6.3",
-    "certifi==2018.8.24",
-    "chardet==3.0.4",
-    "html5lib==1.0.1",
-    "idna==2.7",
-    "requests==2.19.1",
-    "six==1.11.0",
-    "urllib3==1.23",
-    "webencodings==0.5.1"
-]
-
 _LOGGER = logging.getLogger(__name__)
 
 ATTRIBUTION = "Data provided by nexiahome.com"
@@ -59,7 +47,7 @@ CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
         vol.Required(CONF_USERNAME): cv.string,
         vol.Required(CONF_PASSWORD): cv.string,
-        vol.Required(CONF_ID): cv.positive_int,
+        vol.Optional(CONF_ID): cv.positive_int,
         vol.Optional(CONF_SCAN_INTERVAL): cv.positive_int
     }),
 }, extra=vol.ALLOW_EXTRA)
@@ -73,7 +61,7 @@ def setup(hass, config):
 
     username = conf[CONF_USERNAME]
     password = conf[CONF_PASSWORD]
-    house_id = conf[CONF_ID]
+    house_id = conf.get(CONF_ID)
 
     scan_interval = timedelta(
         seconds=conf.get(CONF_SCAN_INTERVAL,
