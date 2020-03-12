@@ -1,8 +1,12 @@
 {
-  "domain": "nexia",
-  "name": "Nexia",
-  "documentation": "https://www.home-assistant.io/components/nexia/",
-  "requirements": ["bs4==0.0.1", "html5lib==1.0.1"],
-  "dependencies": [],
-  "codeowners": ["ryannazaretian"]
+   "domain" : "nexia",
+   "name" : "Nexia",
+   "requirements" : [
+      "requests"
+   ],
+   "dependencies" : [],
+   "codeowners" : [
+      "ryannazaretian"
+   ],
+   "documentation" : "https://www.home-assistant.io/components/nexia/"
 }
