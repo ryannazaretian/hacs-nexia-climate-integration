@@ -222,7 +222,7 @@ class NexiaZone(ClimateDevice):
 
     def set_fan_mode(self, fan_mode):
         """Set new target fan mode."""
-        self._device.thermostat.thermostat.set_fan_mode(fan_mode)
+        self._device.thermostat.set_fan_mode(fan_mode)
         self.schedule_update_ha_state()
 
     def set_hold_mode(self, hold_mode):
