@@ -29,8 +29,13 @@ async def validate_input(hass: core.HomeAssistant, data):
             partial(NexiaHome, username=data[CONF_USERNAME], password=data[CONF_PASSWORD], auto_login=False, auto_update=False)
         )
         nexia_home.login()
-    except (ConnectTimeout, HTTPError) as ex:
+    except ConnectTimeout as ex:
         _LOGGER.error("Unable to connect to Nexia service: %s", str(ex))
+        raise CannotConnect
+    except HTTPError as http_ex:
+        _LOGGER.error("HTTP error from Nexia service: %s", str(http_ex))
+        if http_ex.response.status_code >= 400 and http_ex.response.status_code < 500:
+             raise InvalidAuth
         raise CannotConnect
 
     if not nexia_home.get_name():
