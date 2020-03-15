@@ -2,7 +2,8 @@
    "domain" : "nexia",
    "name" : "Nexia",
    "requirements" : [
-      "requests"
+      "requests",
+      "nexia==0.2.4"
    ],
    "dependencies" : [],
    "codeowners" : [
