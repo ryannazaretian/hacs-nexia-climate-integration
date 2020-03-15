@@ -1,7 +1,6 @@
 """Support for Nexia / Trane XL thermostats."""
 import logging
 
-import voluptuous as vol
 from nexia.const import (
     FAN_MODES,
     OPERATION_MODE_AUTO,
@@ -14,8 +13,8 @@ from nexia.const import (
     SYSTEM_STATUS_IDLE,
     UNIT_FAHRENHEIT,
 )
+import voluptuous as vol
 
-import homeassistant.helpers.config_validation as cv
 from homeassistant.components.climate import ClimateDevice
 from homeassistant.components.climate.const import (
     ATTR_AUX_HEAT,
@@ -55,23 +54,23 @@ from homeassistant.const import (
     TEMP_CELSIUS,
     TEMP_FAHRENHEIT,
 )
-from . import (
+import homeassistant.helpers.config_validation as cv
+
+from .const import (
     ATTR_AIRCLEANER_MODE,
     ATTR_DEHUMIDIFY_SETPOINT,
     ATTR_DEHUMIDIFY_SUPPORTED,
-    ATTR_FIRMWARE,
     ATTR_HOLD_MODES,
     ATTR_HUMIDIFY_SETPOINT,
     ATTR_HUMIDIFY_SUPPORTED,
-    ATTR_MODEL,
     ATTR_SETPOINT_STATUS,
     ATTR_THERMOSTAT_ID,
-    ATTR_THERMOSTAT_NAME,
     ATTR_ZONE_ID,
     ATTR_ZONE_STATUS,
     ATTRIBUTION,
     DATA_NEXIA,
     DOMAIN,
+    MANUFACTURER,
     NEXIA_DEVICE,
     UPDATE_COORDINATOR,
 )
@@ -98,65 +97,68 @@ SET_HUMIDITY_SCHEMA = vol.Schema(
 )
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
-    """Set up climate zones for a Nexia device."""
-    nexia_home = hass.data[DATA_NEXIA][NEXIA_DEVICE]
-    coordinator = hass.data[DATA_NEXIA][UPDATE_COORDINATOR]
+async def async_setup_entry(hass, config_entry, async_add_entities):
+    """Set up climate for a Nexia device."""
 
-    zones = []
+    nexia_data = hass.data[DOMAIN][config_entry.entry_id][DATA_NEXIA]
+    nexia_home = nexia_data[NEXIA_DEVICE]
+    coordinator = nexia_data[UPDATE_COORDINATOR]
+
+    entities = []
     for thermostat_id in nexia_home.get_thermostat_ids():
         thermostat = nexia_home.get_thermostat_by_id(thermostat_id)
-        if thermostat.has_humidify_support():
-            # Add humidify service support
-            def humidify_set_service(service):
-                entity_id = service.data.get(ATTR_ENTITY_ID)
-                humidity = service.data.get(ATTR_HUMIDITY)
-                target_thermostats = None
-
-                if entity_id:
-                    target_thermostats = set(
-                        zone.thermostat for zone in zones if zone.entity_id in entity_id
-                    )
-                else:
-                    target_thermostats = set(zone.thermostat for zone in zones)
-
-                for thermostat in target_thermostats:
-                    thermostat.set_humidify_setpoint(humidity)
-
-            hass.services.register(
-                DOMAIN,
-                SERVICE_SET_HUMIDIFY_SETPOINT,
-                humidify_set_service,
-                schema=SET_HUMIDITY_SCHEMA,
-            )
-
         for zone_id in thermostat.get_zone_ids():
             zone = thermostat.get_zone_by_id(zone_id)
-            zones.append(NexiaZone(coordinator, zone))
+            entities.append(NexiaZone(coordinator, zone))
 
-    add_entities(zones, True)
+    def humidify_set_service(service):
+        entity_id = service.data.get(ATTR_ENTITY_ID)
+        humidity = service.data.get(ATTR_HUMIDITY)
+        target_zones = []
+
+        for zone in entities:
+            if entity_id and zone.entity_id not in entity_id:
+                continue
+
+            if (
+                zone.thermostat.has_humidify_support()
+                and zone.thermostat not in target_zones
+            ):
+                target_zones.append(zone)
+
+        for zone in target_zones:
+            thermostat.set_humidify_setpoint(int(humidity) / 100.0)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_HUMIDIFY_SETPOINT,
+        humidify_set_service,
+        schema=SET_HUMIDITY_SCHEMA,
+    )
 
     def aircleaner_set_service(service):
         entity_id = service.data.get(ATTR_ENTITY_ID)
         aircleaner_mode = service.data.get(ATTR_AIRCLEANER_MODE)
-        target_thermostats = None
+        target_zones = []
 
-        if entity_id:
-            target_thermostats = set(
-                zone.thermostat for zone in zones if zone.entity_id in entity_id
-            )
-        else:
-            target_thermostats = set(zone.thermostat for zone in zones)
+        for zone in entities:
+            if entity_id and zone.entity_id not in entity_id:
+                continue
 
-        for thermostat in target_thermostats:
-            thermostat.set_aircleaner_mode(aircleaner_mode)
+            if zone.thermostat not in target_zones:
+                target_zones.append(zone)
 
-    hass.services.register(
+        for zone in target_zones:
+            zone.set_aircleaner_mode(aircleaner_mode)
+
+    hass.services.async_register(
         DOMAIN,
         SERVICE_SET_AIRCLEANER_MODE,
         aircleaner_set_service,
         schema=SET_FAN_MIN_ON_TIME_SCHEMA,
     )
+
+    async_add_entities(entities, True)
 
 
 class NexiaZone(ClimateDevice):
@@ -164,6 +166,7 @@ class NexiaZone(ClimateDevice):
 
     def __init__(self, coordinator, device):
         """Initialize the thermostat."""
+        self.thermostat = device.thermostat
         self._device = device
         self._coordinator = coordinator
         self._unique_id = f"{self._device.zone_id}_zone"
@@ -188,12 +191,12 @@ class NexiaZone(ClimateDevice):
 
     @property
     def is_fan_on(self):
-        """Return true if fan is on."""
+        """Blower is on."""
         return self._device.thermostat.is_blower_active()
 
     @property
     def name(self):
-        """ Returns the zone name. """
+        """Name of the zone."""
         return self._device.get_name()
 
     @property
@@ -235,36 +238,36 @@ class NexiaZone(ClimateDevice):
 
     @property
     def preset_mode(self):
-        """Returns the current preset."""
+        """Preset that is active."""
         return self._device.get_preset()
 
     @property
     def preset_modes(self):
-        """Returns all presets."""
+        """All presets."""
         return self._device.get_presets()
 
     def set_humidity(self, humidity):
-        """ Sets the dehumidify target """
+        """Dehumidify target."""
         self._device.thermostat.set_dehumidify_setpoint(humidity / 100.0)
         self.schedule_update_ha_state()
 
     @property
     def current_humidity(self):
-        """Return the current humidity."""
+        """Humidity indoors."""
         if self._device.thermostat.has_relative_humidity():
             return round(self._device.thermostat.get_relative_humidity() * 100.0, 1)
         return "Not supported"
 
     @property
     def target_temperature(self):
-        """Return the temperature we try to reach."""
+        """Temperature we try to reach."""
         if self._device.get_current_mode() == "COOL":
             return self._device.get_cooling_setpoint()
         return self._device.get_heating_setpoint()
 
     @property
     def hvac_action(self) -> str:
-        """Return current operation ie. heat, cool, idle."""
+        """Operation ie. heat, cool, idle."""
         system_status = self._device.thermostat.get_system_status()
         zone_called = self._device.is_calling()
 
@@ -282,12 +285,12 @@ class NexiaZone(ClimateDevice):
 
     @property
     def hvac_mode(self):
-        """Return current operation ie. heat, cool, idle."""
+        """Operation requested ie. heat, cool, idle."""
         return self.mode
 
     @property
     def hvac_modes(self):
-        """Returns a list of HVAC available modes"""
+        """List of HVAC available modes."""
         return [
             HVAC_MODE_OFF,
             HVAC_MODE_AUTO,
@@ -349,7 +352,20 @@ class NexiaZone(ClimateDevice):
 
     @property
     def is_aux_heat(self):
+        """Emergency heat state."""
         return "on" if self._device.thermostat.is_emergency_heat_active() else "off"
+
+    @property
+    def device_info(self):
+        """Return the device_info of the device."""
+        return {
+            "identifiers": {(DOMAIN, self._device.zone_id)},
+            "name": self._device.get_name(),
+            "model": self._device.thermostat.get_model(),
+            "sw_version": self._device.thermostat.get_firmware(),
+            "manufacturer": MANUFACTURER,
+            "via_device": (DOMAIN, self._device.thermostat.thermostat_id),
+        }
 
     @property
     def device_state_attributes(self):
@@ -371,9 +387,6 @@ class NexiaZone(ClimateDevice):
             ATTR_HVAC_MODES: self.hvac_modes,
             ATTR_PRESET_MODE: self._device.get_preset(),
             ATTR_HOLD_MODES: self._device.get_presets(),
-            ATTR_MODEL: self._device.thermostat.get_model(),
-            ATTR_FIRMWARE: self._device.thermostat.get_firmware(),
-            ATTR_THERMOSTAT_NAME: self._device.thermostat.get_name(),
             ATTR_SETPOINT_STATUS: self._device.get_setpoint_status(),
             ATTR_ZONE_STATUS: self._device.get_status(),
             ATTR_THERMOSTAT_ID: self._device.thermostat.thermostat_id,
@@ -436,27 +449,27 @@ class NexiaZone(ClimateDevice):
         self.schedule_update_ha_state()
 
     def turn_aux_heat_off(self):
-        """Turns Aux Heat off"""
+        """Turn. Aux Heat off."""
         self._device.thermostat.set_emergency_heat(False)
         self.schedule_update_ha_state()
 
     def turn_aux_heat_on(self):
-        """Turns Aux Heat on"""
+        """Turn. Aux Heat on."""
         self._device.thermostat.set_emergency_heat(True)
         self.schedule_update_ha_state()
 
     def turn_off(self):
-        """Turns off the zone"""
+        """Turn. off the zone."""
         self.set_hvac_mode(OPERATION_MODE_OFF)
         self.schedule_update_ha_state()
 
     def turn_on(self):
-        """Turns on the zone"""
+        """Turn. on the zone."""
         self.set_hvac_mode(OPERATION_MODE_AUTO)
         self.schedule_update_ha_state()
 
     def set_swing_mode(self, swing_mode):
-        """Unsupported - Swing Mode"""
+        """Unsupported - Swing Mode."""
         raise NotImplementedError("set_swing_mode is not supported by this device")
 
     def set_hvac_mode(self, hvac_mode: str) -> None:
@@ -483,23 +496,23 @@ class NexiaZone(ClimateDevice):
         self.schedule_update_ha_state()
 
     def set_aircleaner_mode(self, aircleaner_mode):
-        """ Sets the aircleaner mode """
+        """Set the aircleaner mode."""
         self._device.thermostat.set_air_cleaner(aircleaner_mode)
         self.schedule_update_ha_state()
 
     def set_humidify_setpoint(self, humidify_setpoint):
-        """ Sets the humidify setpoint """
+        """Set the humidify setpoint."""
         self._device.thermostat.set_humidify_setpoint(humidify_setpoint / 100.0)
         self.schedule_update_ha_state()
 
     @property
     def should_poll(self):
-        """Update are handled by the coordinator."""
+        """Update use the coordinator."""
         return False
 
     @property
     def available(self):
-        """Return True if entity is available."""
+        """Return true if entity is available."""
         return self._coordinator.last_update_success
 
     async def async_added_to_hass(self):
