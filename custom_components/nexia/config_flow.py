@@ -26,13 +26,14 @@ async def validate_input(hass: core.HomeAssistant, data):
     nexia_home = None
     try:
         nexia_home = await hass.async_add_executor_job(
-            partial(NexiaHome, username=data[CONF_USERNAME], password=data[CONF_PASSWORD], auto_update=False)
+            partial(NexiaHome, username=data[CONF_USERNAME], password=data[CONF_PASSWORD], auto_login=False, auto_update=False)
         )
+        nexia_home.login()
     except (ConnectTimeout, HTTPError) as ex:
         _LOGGER.error("Unable to connect to Nexia service: %s", str(ex))
         raise CannotConnect
 
-    if not nexia_home.house_id:
+    if not nexia_home.get_name():
         raise InvalidAuth
 
     info = {"title": nexia_home.get_name(), "house_id": nexia_home.house_id}
