@@ -3,7 +3,7 @@
    "name" : "Nexia",
    "requirements" : [
       "requests",
-      "nexia==0.2.4"
+      "nexia==0.3.2"
    ],
    "dependencies" : [],
    "codeowners" : [
