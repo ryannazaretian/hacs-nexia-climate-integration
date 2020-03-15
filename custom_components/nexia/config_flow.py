@@ -2,14 +2,12 @@
 from functools import partial
 import logging
 
-from requests.exceptions import ConnectTimeout,HTTPError
+from nexia.home import NexiaHome
+from requests.exceptions import ConnectTimeout, HTTPError
 import voluptuous as vol
 
-from nexia.home import NexiaHome
-
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
-
 from homeassistant import config_entries, core, exceptions
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
 from .const import DOMAIN  # pylint:disable=unused-import
 
@@ -26,7 +24,13 @@ async def validate_input(hass: core.HomeAssistant, data):
     nexia_home = None
     try:
         nexia_home = await hass.async_add_executor_job(
-            partial(NexiaHome, username=data[CONF_USERNAME], password=data[CONF_PASSWORD], auto_login=False, auto_update=False)
+            partial(
+                NexiaHome,
+                username=data[CONF_USERNAME],
+                password=data[CONF_PASSWORD],
+                auto_login=False,
+                auto_update=False,
+            )
         )
         nexia_home.login()
     except ConnectTimeout as ex:
@@ -35,7 +39,7 @@ async def validate_input(hass: core.HomeAssistant, data):
     except HTTPError as http_ex:
         _LOGGER.error("HTTP error from Nexia service: %s", str(http_ex))
         if http_ex.response.status_code >= 400 and http_ex.response.status_code < 500:
-             raise InvalidAuth
+            raise InvalidAuth
         raise CannotConnect
 
     if not nexia_home.get_name():

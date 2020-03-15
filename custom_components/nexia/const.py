@@ -1,3 +1,5 @@
+"""Nexia constants."""
+
 PLATFORMS = ["sensor", "binary_sensor", "climate"]
 
 ATTRIBUTION = "Data provided by mynexia.com"
@@ -35,4 +37,4 @@ ATTR_DEHUMIDIFY_SETPOINT = "dehumidify_setpoint"
 UPDATE_COORDINATOR = "update_coordinator"
 
 
-MANUFACTURER="Trane"
+MANUFACTURER = "Trane"
