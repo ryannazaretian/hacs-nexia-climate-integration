@@ -1,90 +1,126 @@
 """Support for Nexia / Trane XL Thermostats."""
-import logging
+import asyncio
 from datetime import timedelta
+from functools import partial
+import logging
 
-import voluptuous as vol
+from nexia.home import NexiaHome
 from requests.exceptions import ConnectTimeout, HTTPError
+import voluptuous as vol
 
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 import homeassistant.helpers.config_validation as cv
-from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, CONF_ID, \
-    CONF_SCAN_INTERVAL
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+from .const import DATA_NEXIA, DOMAIN, NEXIA_DEVICE, PLATFORMS, UPDATE_COORDINATOR
 
 _LOGGER = logging.getLogger(__name__)
 
-ATTRIBUTION = "Data provided by nexiahome.com"
 
-NOTIFICATION_ID = 'nexia_notification'
-NOTIFICATION_TITLE = 'Nexia Setup'
+CONFIG_SCHEMA = vol.Schema(
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Required(CONF_USERNAME): cv.string,
+                vol.Required(CONF_PASSWORD): cv.string,
+            },
+            extra=vol.ALLOW_EXTRA,
+        ),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
 
-DATA_NEXIA = 'nexia'
-NEXIA_DEVICE = 'device'
-NEXIA_SCAN_INTERVAL = 'scan_interval'
-
-DOMAIN = 'nexia'
-DEFAULT_ENTITY_NAMESPACE = 'nexia'
-
-ATTR_FAN = 'fan'
-ATTR_SYSTEM_MODE = 'system_mode'
-ATTR_CURRENT_OPERATION = 'system_status'
-ATTR_MODEL = "model"
-ATTR_FIRMWARE = 'firmware'
-ATTR_THERMOSTAT_NAME = 'thermostat_name'
-ATTR_HOLD_MODES = 'hold_modes'
-ATTR_SETPOINT_STATUS = 'setpoint_status'
-ATTR_ZONE_STATUS = 'zone_status'
-ATTR_FAN_SPEED = 'fan_speed'
-ATTR_COMPRESSOR_SPEED = 'compressor_speed'
-ATTR_OUTDOOR_TEMPERATURE = 'outdoor_temperature'
-ATTR_THERMOSTAT_ID = 'thermostat_id'
-ATTR_ZONE_ID = 'zone_id'
-ATTR_AIRCLEANER_MODE = 'aircleaner_mode'
-ATTR_HUMIDIFY_SUPPORTED = "humidify_supported"
-ATTR_DEHUMIDIFY_SUPPORTED = "dehumidify_supported"
-ATTR_HUMIDIFY_SETPOINT = "humidify_setpoint"
-ATTR_DEHUMIDIFY_SETPOINT = "dehumidify_setpoint"
-
-CONFIG_SCHEMA = vol.Schema({
-    DOMAIN: vol.Schema({
-        vol.Required(CONF_USERNAME): cv.string,
-        vol.Required(CONF_PASSWORD): cv.string,
-        vol.Optional(CONF_ID): cv.positive_int,
-        vol.Optional(CONF_SCAN_INTERVAL): cv.positive_int
-    }),
-}, extra=vol.ALLOW_EXTRA)
+DEFAULT_UPDATE_RATE = 120
 
 
-def setup(hass, config):
-    """Configure the base Nexia device for Home Assistant."""
-    from .nexia_thermostat import NexiaThermostat
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Unload a config entry."""
+    unload_ok = all(
+        await asyncio.gather(
+            *[
+                hass.config_entries.async_forward_entry_unload(entry, component)
+                for component in PLATFORMS
+            ]
+        )
+    )
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id)
 
-    conf = config[DOMAIN]
+    return unload_ok
 
-    username = conf[CONF_USERNAME]
-    password = conf[CONF_PASSWORD]
-    house_id = conf.get(CONF_ID)
 
-    scan_interval = timedelta(
-        seconds=conf.get(CONF_SCAN_INTERVAL,
-                         NexiaThermostat.DEFAULT_UPDATE_RATE))
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the nexia component from YAML."""
 
-    try:
-        thermostat = NexiaThermostat(
-            username=username,
-            password=password,
-            house_id=house_id,
-            update_rate=NexiaThermostat.DISABLE_AUTO_UPDATE)
-        hass.data[DATA_NEXIA] = {NEXIA_DEVICE: thermostat,
-                                 NEXIA_SCAN_INTERVAL: scan_interval}
-    except (ConnectTimeout, HTTPError) as ex:
-        _LOGGER.error("Unable to connect to Nexia service: %s", str(ex))
-        hass.components.persistent_notification.create(
-            'Error: {}<br />'
-            'You will need to restart hass after fixing.'
-            ''.format(ex),
-            title=NOTIFICATION_TITLE,
-            notification_id=NOTIFICATION_ID)
-        return False
+    conf = config.get(DOMAIN)
+    hass.data.setdefault(DOMAIN, {})
+
+    if not conf:
+        return True
+
+    hass.async_create_task(
+        hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": SOURCE_IMPORT}, data=conf
+        )
+    )
     return True
 
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Configure the base Nexia device for Home Assistant."""
+
+    conf = entry.data
+    username = conf[CONF_USERNAME]
+    password = conf[CONF_PASSWORD]
+
+    nexia_home = None
+
+    try:
+        nexia_home = await hass.async_add_executor_job(
+            partial(NexiaHome, username=username, password=password)
+        )
+    except ConnectTimeout as ex:
+        _LOGGER.error("Unable to connect to Nexia service: %s", str(ex))
+        raise ConfigEntryNotReady
+    except HTTPError as http_ex:
+        if http_ex.response.status_code >= 400 and http_ex.response.status_code < 500:
+            _LOGGER.error(
+                "Access error from Nexia service, please check credentials: %s",
+                str(http_ex),
+            )
+            return False
+        _LOGGER.error("HTTP error from Nexia service: %s", str(http_ex))
+        raise ConfigEntryNotReady
+
+    async def _async_update_data():
+        """Fetch data from API endpoint."""
+        return await hass.async_add_job(nexia_home.update)
+
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name="Nexia update",
+        update_method=_async_update_data,
+        update_interval=timedelta(seconds=DEFAULT_UPDATE_RATE),
+    )
+
+    hass.data[DOMAIN][entry.entry_id] = {}
+    hass.data[DOMAIN][entry.entry_id][DATA_NEXIA] = {
+        NEXIA_DEVICE: nexia_home,
+        UPDATE_COORDINATOR: coordinator,
+    }
+
+    for component in PLATFORMS:
+        hass.async_create_task(
+            hass.config_entries.async_forward_entry_setup(entry, component)
+        )
+
+    return True
+
+
 def is_percent(value):
+    """If the value is a valid percentage."""
     return isinstance(value, int) and 0 <= value <= 100
