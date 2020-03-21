@@ -1,5 +1,4 @@
 """Config flow for Nexia integration."""
-from functools import partial
 import logging
 
 from nexia.home import NexiaHome
@@ -21,23 +20,20 @@ async def validate_input(hass: core.HomeAssistant, data):
 
     Data has the keys from DATA_SCHEMA with values provided by the user.
     """
-    nexia_home = None
     try:
-        nexia_home = await hass.async_add_executor_job(
-            partial(
-                NexiaHome,
-                username=data[CONF_USERNAME],
-                password=data[CONF_PASSWORD],
-                auto_login=False,
-                auto_update=False,
-            )
+        nexia_home = NexiaHome(
+            username=data[CONF_USERNAME],
+            password=data[CONF_PASSWORD],
+            auto_login=False,
+            auto_update=False,
+            device_name=hass.config.location_name,
         )
-        nexia_home.login()
+        await hass.async_add_executor_job(nexia_home.login)
     except ConnectTimeout as ex:
-        _LOGGER.error("Unable to connect to Nexia service: %s", str(ex))
+        _LOGGER.error("Unable to connect to Nexia service: %s", ex)
         raise CannotConnect
     except HTTPError as http_ex:
-        _LOGGER.error("HTTP error from Nexia service: %s", str(http_ex))
+        _LOGGER.error("HTTP error from Nexia service: %s", http_ex)
         if http_ex.response.status_code >= 400 and http_ex.response.status_code < 500:
             raise InvalidAuth
         raise CannotConnect
