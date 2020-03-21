@@ -7,8 +7,7 @@ from homeassistant.const import (
     DEVICE_CLASS_HUMIDITY,
     DEVICE_CLASS_TEMPERATURE,
     TEMP_CELSIUS,
-    TEMP_FAHRENHEIT,
-    UNIT_PERCENTAGE,
+    TEMP_FAHRENHEIT
 )
 
 from .const import ATTRIBUTION, DOMAIN, MANUFACTURER, NEXIA_DEVICE, UPDATE_COORDINATOR
@@ -57,7 +56,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     "get_current_compressor_speed",
                     "Current Compressor Speed",
                     None,
-                    UNIT_PERCENTAGE,
+                    "%",
                     percent_conv,
                 )
             )
@@ -68,7 +67,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     "get_requested_compressor_speed",
                     "Requested Compressor Speed",
                     None,
-                    UNIT_PERCENTAGE,
+                    "%",
                     percent_conv,
                 )
             )
@@ -98,7 +97,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
                     "get_relative_humidity",
                     "Relative Humidity",
                     DEVICE_CLASS_HUMIDITY,
-                    UNIT_PERCENTAGE,
+                    "%",
                     percent_conv,
                 )
             )
